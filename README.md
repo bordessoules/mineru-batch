@@ -104,6 +104,68 @@ Sortie typique :
 | `hybrid-http-client` (défaut) | ~5 s/PDF | 95+ OmniDocBench | PDFs avec texte natif (factures, rapports) |
 | `vlm-http-client` | ~15 s/PDF | 95+ OmniDocBench | PDFs scannés ou layouts très atypiques |
 
+## Brancher un autre serveur OpenAI-compatible (LM Studio, OpenRouter, vLLM custom…)
+
+Le mode `--remote URL` saute le serveur vLLM intégré et envoie les pages directement à un endpoint **OpenAI-compatible externe**. MinerU utilise simplement `/v1/chat/completions` avec `image_url` base64 — donc n'importe quel serveur respectant ce contrat marche, **avec un VLM moderne au choix** (Qwen3-VL, GLM-4.5V, InternVL3, GPT-4o, Claude, Gemini, etc.).
+
+> **Trade-off** : le modèle par défaut `MinerU2.5-Pro-2604-1.2B` est fine-tuné spécifiquement pour la conversion de documents. Un VLM générique (même plus gros) peut être moins précis sur les tableaux complexes et les formules. Mais sur du texte courant et des layouts standards (factures, rapports), un Qwen3-VL ou GPT-4o donne des résultats au moins équivalents.
+
+### LM Studio (local, GPU/CPU host)
+
+1. Lance LM Studio, charge un VLM (ex. `Qwen2.5-VL-7B-Instruct` ou `MiniCPM-V-2.6`)
+2. Démarre le serveur OpenAI-compat (port 1234 par défaut)
+3. Lance le batch :
+
+```bash
+./mineru-batch.sh ~/factures \
+  --remote http://host.docker.internal:1234/v1
+```
+
+(`host.docker.internal` est résolu automatiquement vers l'host depuis le container — fonctionne sur Docker Desktop et sur Linux via `--add-host=host-gateway` qu'on injecte.)
+
+### Ollama (local)
+
+```bash
+ollama serve  # déjà fait par défaut
+ollama pull qwen2.5-vl:7b
+./mineru-batch.sh ~/factures --remote http://host.docker.internal:11434/v1
+```
+
+### OpenRouter (cloud, pas de GPU local)
+
+```bash
+./mineru-batch.sh ~/factures \
+  --remote https://openrouter.ai/api/v1 \
+  --model qwen/qwen3-vl-8b-instruct \
+  --api-key sk-or-v1-xxxxx
+```
+
+Modèles VLM utiles sur OpenRouter : `qwen/qwen3-vl-*`, `anthropic/claude-sonnet-4.5`, `openai/gpt-4o`, `google/gemini-1.5-pro`, `meta-llama/llama-3.2-90b-vision-instruct`, `mistralai/pixtral-large-2411`.
+
+### vLLM custom (autre VLM dans vLLM)
+
+Pour servir un modèle plus gros que MinerU2.5-Pro-1.2B sur ta machine :
+
+```bash
+docker run -d --gpus all -p 8001:8000 \
+  --ipc=host --name my-vllm \
+  vllm/vllm-openai:latest \
+  --model Qwen/Qwen2.5-VL-7B-Instruct \
+  --max-model-len 8192
+
+./mineru-batch.sh ~/factures --remote http://host.docker.internal:8001/v1
+```
+
+### Variables d'env supportées (équivalent flags)
+
+| Flag | Env var | Effet |
+|---|---|---|
+| `--remote URL` | — | Mode endpoint externe |
+| `--model NAME` | `MINERU_VL_MODEL_NAME` | Force le model name dans la requête |
+| `--api-key KEY` | `MINERU_VL_API_KEY` | Header `Authorization: Bearer <key>` |
+| `--gpu N` | `GPU_ID` | GPU pour le serveur local (mode défaut) |
+| `--backend B` | `BACKEND` | `hybrid-http-client` (défaut) ou `vlm-http-client` |
+
 ## Reprise / ajout incrémental
 
 Ajoute des PDFs n'importe où dans l'arbo, relance la même commande : seuls les nouveaux sont traités.

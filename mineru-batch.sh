@@ -20,25 +20,45 @@ export MSYS2_ARG_CONV_EXCL='*'
 
 # --- args ---
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <input_folder> [--gpu N] [--backend hybrid-http-client|vlm-http-client]"
-  echo "  GPU defaults to 0. Backend defaults to hybrid-http-client (rapide pour PDFs natifs)."
+  cat <<EOF
+Usage: $0 <input_folder> [options]
+
+Options:
+  --gpu N                    GPU ID pour le serveur local (default: 0).
+  --backend B                hybrid-http-client (defaut, rapide) | vlm-http-client (VLM partout, lent).
+  --remote URL               Mode remote: pas de serveur local, utilise un endpoint OpenAI-compatible
+                             externe (LM Studio, Ollama, OpenRouter, vLLM custom...).
+                             Exemples:
+                               --remote http://host.docker.internal:1234/v1   (LM Studio sur l'host)
+                               --remote https://openrouter.ai/api/v1
+  --model NAME               Force le model name dans la requete (sinon auto-detect via /v1/models).
+  --api-key KEY              Cle API pour endpoints prives (OpenRouter, etc.). Sera passee en
+                             header Authorization: Bearer.
+
+Variables d'env equivalentes : GPU_ID, BACKEND, MINERU_VL_MODEL_NAME, MINERU_VL_API_KEY.
+EOF
   exit 1
 fi
 INPUT_DIR="$1"; shift
 INPUT_DIR="${INPUT_DIR%/}"  # strip trailing slash
 [[ ! -d "$INPUT_DIR" ]] && { echo "[ERR] $INPUT_DIR introuvable"; exit 1; }
-# Si chemin relatif, on le rend absolu via pwd (sans transformation pwd -W qui casse Docker Desktop sur Windows)
 case "$INPUT_DIR" in
-  /*|[A-Za-z]:*) ;;  # deja absolu (POSIX ou Windows-style)
+  /*|[A-Za-z]:*) ;;
   *) INPUT_DIR="$(cd "$INPUT_DIR" && pwd)" ;;
 esac
 
 GPU_ID="${GPU_ID:-0}"
 BACKEND="${BACKEND:-hybrid-http-client}"
+REMOTE_URL=""
+MODEL_NAME="${MINERU_VL_MODEL_NAME:-}"
+API_KEY="${MINERU_VL_API_KEY:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --gpu) GPU_ID="$2"; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
+    --remote) REMOTE_URL="$2"; shift 2 ;;
+    --model) MODEL_NAME="$2"; shift 2 ;;
+    --api-key) API_KEY="$2"; shift 2 ;;
     *) echo "Option inconnue: $1"; exit 1 ;;
   esac
 done
@@ -56,22 +76,43 @@ if ! docker image inspect mineru:latest >/dev/null 2>&1; then
   docker build -t mineru:latest -f Dockerfile .
 fi
 
-# --- 2. start serveur (compose est idempotent : si INPUT_DIR/GPU_ID changent, il recree) ---
-CONTAINER="mineru-openai-server"
-export INPUT_DIR GPU_ID  # consommees par compose.yaml
-echo "[*] docker compose up -d (input=$INPUT_DIR, GPU=$GPU_ID)..."
-docker compose --profile openai-server up -d
-
-# --- 3. attendre healthy ---
-echo "[*] Attente health=healthy (warmup vLLM ~2-3 min au 1er start)..."
-deadline=$(( $(date +%s) + 600 ))
-until [[ "$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null)" == "healthy" ]]; do
-  [[ $(date +%s) -gt $deadline ]] && { echo "[ERR] timeout 10min sans healthy"; exit 1; }
-  status=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo "?")
-  echo "    health=$status"
-  sleep 10
-done
-echo "[OK] serveur ready."
+# --- 2. setup container : soit serveur local, soit worker pour endpoint remote ---
+if [[ -n "$REMOTE_URL" ]]; then
+  CONTAINER="mineru-client"
+  SERVER_URL="$REMOTE_URL"
+  echo "[*] Mode REMOTE : endpoint=$SERVER_URL${MODEL_NAME:+, model=$MODEL_NAME}"
+  # nettoie un eventuel ancien client
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  # worker minimal : container sleep avec env vars + volumes, on exec dedans
+  # --add-host garantit que host.docker.internal pointe sur l'host (utile sur Linux,
+  # deja configure par defaut sur Docker Desktop Mac/Windows).
+  # shellcheck disable=SC2086
+  docker run -d --name "$CONTAINER" \
+    --add-host=host.docker.internal:host-gateway \
+    -v "$INPUT_DIR:/workspace/input" \
+    -v "$SCRIPT_DIR/data/output:/workspace/output" \
+    ${MODEL_NAME:+-e MINERU_VL_MODEL_NAME="$MODEL_NAME"} \
+    ${API_KEY:+-e MINERU_VL_API_KEY="$API_KEY"} \
+    -e MINERU_MODEL_SOURCE=local \
+    --entrypoint sleep \
+    mineru:latest infinity >/dev/null
+  echo "[OK] worker ready."
+else
+  CONTAINER="mineru-openai-server"
+  SERVER_URL="http://localhost:30000"
+  export INPUT_DIR GPU_ID
+  echo "[*] docker compose up -d (input=$INPUT_DIR, GPU=$GPU_ID)..."
+  docker compose --profile openai-server up -d
+  echo "[*] Attente health=healthy (warmup vLLM ~2-3 min au 1er start)..."
+  deadline=$(( $(date +%s) + 600 ))
+  until [[ "$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null)" == "healthy" ]]; do
+    [[ $(date +%s) -gt $deadline ]] && { echo "[ERR] timeout 10min sans healthy"; exit 1; }
+    status=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo "?")
+    echo "    health=$status"
+    sleep 10
+  done
+  echo "[OK] serveur ready."
+fi
 
 # --- 4. inventaire PDFs ---
 mapfile -t PDFS < <(find "$INPUT_DIR" -type f -name "*.pdf")
@@ -118,7 +159,7 @@ for hostdir in "${DIRS[@]}"; do
     echo "===== ${rel:-/} ====="
     docker exec "$CONTAINER" mineru \
       -p "$containerdir" -o "$container_outdir" \
-      -b "$BACKEND" -u http://localhost:30000
+      -b "$BACKEND" -u "$SERVER_URL"
     echo "===== rc=$? ====="
   } >> "$LOG" 2>&1
 
@@ -153,4 +194,8 @@ echo "       .md + images a cote des PDFs : $INPUT_DIR/<chemin>/<nom>.md"
 echo "       Audit complet                : $SCRIPT_DIR/data/output/"
 echo "       Log                          : $LOG"
 echo
-echo "Pour eteindre le serveur : docker compose --profile openai-server down"
+if [[ -n "$REMOTE_URL" ]]; then
+  echo "Pour supprimer le worker : docker rm -f mineru-client"
+else
+  echo "Pour eteindre le serveur : docker compose --profile openai-server down"
+fi

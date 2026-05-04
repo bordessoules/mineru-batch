@@ -1,0 +1,23 @@
+# Sortie de batch
+data/
+batch_*.log
+*.out
+
+# Backup / temp
+*.bak
+*~
+.DS_Store
+Thumbs.db
+
+# Editeurs / outils
+.vscode/
+.idea/
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Docker
+.docker/

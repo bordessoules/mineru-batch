@@ -1,5 +1,10 @@
 # mineru-batch
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/bordessoules/mineru-batch/actions/workflows/ci.yml/badge.svg)](https://github.com/bordessoules/mineru-batch/actions/workflows/ci.yml)
+[![Built on MinerU](https://img.shields.io/badge/built%20on-MinerU-blue)](https://github.com/opendatalab/MinerU)
+[![vLLM](https://img.shields.io/badge/inference-vLLM-orange)](https://github.com/vllm-project/vllm)
+
 Wrapper autour de [MinerU](https://github.com/opendatalab/MinerU) pour transformer **tous les PDFs d'une arborescence** en Markdown, en un appel.
 
 ```bash
@@ -11,6 +16,39 @@ Wrapper autour de [MinerU](https://github.com/opendatalab/MinerU) pour transform
 - `images/` — figures extraites, partagées entre tous les `.md` du dossier (hashes uniques)
 
 Reprend où il s'est arrêté : tout PDF avec un `.md` voisin est skippé.
+
+## Exemple de sortie
+
+Une facture Bouygues Telecom (3 pages) → `Bouyguestelecom_Facture_20250716.md` (extrait) :
+
+```markdown
+Date de facture 16/07/2025
+
+N° de facture 11014954620725
+
+N° de ligne 06 66 56 55 07
+
+Bonjour, voici votre facture du 16 juillet 2025
+
+<table>
+  <tr><td></td><td>€ HT</td><td>€ TTC(*)</td></tr>
+  <tr><td>Montant prélevé le 31 juillet 2025</td><td></td><td>10,99</td></tr>
+  <tr><td>Vos services fournis par votre opérateur</td><td>9,16</td><td>10,99</td></tr>
+  <tr><td>TVA 20,00 % payée sur les débits</td><td></td><td>1,83</td></tr>
+</table>
+
+# Détail de votre facture du 16 juillet 2025
+
+# Vos services fournis par votre opérateur
+
+décomptées de vos forfaits
+```
+
+À retenir :
+- **Tableaux HTML** structurés (colspan/rowspan préservés) → idéal pour parser les montants HT/TTC/TVA en aval
+- **UTF-8 propre** : `€`, `°`, accents (é/à/è/ç/ô) tous corrects, zéro mojibake
+- **Titres markdown** (`#`) pour la structure hiérarchique
+- **Images** référencées en lien relatif `![](images/HASH.jpg)`
 
 ## Pourquoi
 

@@ -48,7 +48,7 @@ command -v docker >/dev/null || { echo "[ERR] docker requis dans PATH"; exit 1; 
 docker info >/dev/null 2>&1 || { echo "[ERR] daemon Docker non joignable (Docker Desktop demarre ?)"; exit 1; }
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || { echo "[ERR] cannot cd to $SCRIPT_DIR"; exit 1; }
 
 # --- 1. build image si absente ---
 if ! docker image inspect mineru:latest >/dev/null 2>&1; then

@@ -1,0 +1,5 @@
+# Hadolint config — ignore version pinning rules (OS package versions change too often,
+# and we explicitly use a pinned base image vllm/vllm-openai:v0.11.2 which is what matters).
+ignored:
+  - DL3008  # Pin apt versions
+  - DL3015  # --no-install-recommends (already applied where it matters)

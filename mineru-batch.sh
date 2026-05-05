@@ -34,8 +34,13 @@ Options:
   --model NAME               Force le model name dans la requete (sinon auto-detect via /v1/models).
   --api-key KEY              Cle API pour endpoints prives (OpenRouter, etc.). Sera passee en
                              header Authorization: Bearer.
+  --md-suffix _NAME          Suffixe a ajouter au nom du .md (ex: _diffusion).
+                             Permet de comparer plusieurs runs cote-a-cote sans ecraser :
+                               foo.pdf + run1 -> foo.md
+                               foo.pdf + run2 --md-suffix _v2 -> foo_v2.md
+                             Le skip-si-existe utilise le meme suffixe.
 
-Variables d'env equivalentes : GPU_ID, BACKEND, MINERU_VL_MODEL_NAME, MINERU_VL_API_KEY.
+Variables d'env equivalentes : GPU_ID, BACKEND, MINERU_VL_MODEL_NAME, MINERU_VL_API_KEY, MD_SUFFIX.
 EOF
   exit 1
 fi
@@ -52,6 +57,7 @@ BACKEND="${BACKEND:-hybrid-http-client}"
 REMOTE_URL=""
 MODEL_NAME="${MINERU_VL_MODEL_NAME:-}"
 API_KEY="${MINERU_VL_API_KEY:-}"
+MD_SUFFIX="${MD_SUFFIX:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --gpu) GPU_ID="$2"; shift 2 ;;
@@ -59,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --remote) REMOTE_URL="$2"; shift 2 ;;
     --model) MODEL_NAME="$2"; shift 2 ;;
     --api-key) API_KEY="$2"; shift 2 ;;
+    --md-suffix) MD_SUFFIX="$2"; shift 2 ;;
     *) echo "Option inconnue: $1"; exit 1 ;;
   esac
 done
@@ -140,15 +147,15 @@ for hostdir in "${DIRS[@]}"; do
   shopt -u nullglob nocaseglob
   [[ ${#pdfs_here[@]} -eq 0 ]] && continue
 
-  # skip si tous les .md existent
+  # skip si tous les .md existent (avec le suffix courant)
   need=false
   for pdf in "${pdfs_here[@]}"; do
     base=$(basename "$pdf"); base="${base%.[Pp][Dd][Ff]}"
-    [[ -f "$hostdir/$base.md" ]] || { need=true; break; }
+    [[ -f "$hostdir/${base}${MD_SUFFIX}.md" ]] || { need=true; break; }
   done
   if ! $need; then
     skipped=$((skipped + ${#pdfs_here[@]}))
-    echo "[SKIP] ${rel:-/} (${#pdfs_here[@]} .md deja la)"
+    echo "[SKIP] ${rel:-/} (${#pdfs_here[@]} ${MD_SUFFIX:+suffix=${MD_SUFFIX} }deja la)"
     continue
   fi
 
@@ -176,7 +183,7 @@ for hostdir in "${DIRS[@]}"; do
       fail=$((fail+1))
       echo "    [FAIL] $base.pdf : .md vide (modele non-MinerU au bout du --remote ?)"
     else
-      cp "$md" "$hostdir/$base.md"
+      cp "$md" "$hostdir/${base}${MD_SUFFIX}.md"
       ok=$((ok+1))
     fi
     img_src=$(find "$host_outdir/$base" -type d -name "images" -print -quit 2>/dev/null)
@@ -195,7 +202,7 @@ done
 TOTAL_TIME=$(($(date +%s)-START_TS))
 echo
 echo "[DONE] $ok OK / $fail FAIL / $skipped SKIPPED sur $total_pdfs PDFs en ${TOTAL_TIME}s"
-echo "       .md + images a cote des PDFs : $INPUT_DIR/<chemin>/<nom>.md"
+echo "       .md + images a cote des PDFs : $INPUT_DIR/<chemin>/<nom>${MD_SUFFIX}.md"
 echo "       Audit complet                : $SCRIPT_DIR/data/output/"
 echo "       Log                          : $LOG"
 echo

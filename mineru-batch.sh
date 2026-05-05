@@ -114,8 +114,8 @@ else
   echo "[OK] serveur ready."
 fi
 
-# --- 4. inventaire PDFs ---
-mapfile -t PDFS < <(find "$INPUT_DIR" -type f -name "*.pdf")
+# --- 4. inventaire PDFs (case-insensitive : matche .pdf, .PDF, .Pdf, etc.) ---
+mapfile -t PDFS < <(find "$INPUT_DIR" -type f -iname "*.pdf")
 total_pdfs=${#PDFS[@]}
 [[ $total_pdfs -eq 0 ]] && { echo "[*] Aucun PDF trouve sous $INPUT_DIR"; exit 0; }
 mapfile -t DIRS < <(for p in "${PDFS[@]}"; do echo "${p%/*}"; done | sort -u)
@@ -134,15 +134,16 @@ for hostdir in "${DIRS[@]}"; do
   host_outdir="$SCRIPT_DIR/data/output${rel:+/$rel}"
   container_outdir="/workspace/output${rel:+/$rel}"
 
-  shopt -s nullglob
+  # case-insensitive glob pour matcher *.pdf, *.PDF, *.Pdf, etc.
+  shopt -s nullglob nocaseglob
   pdfs_here=("$hostdir"/*.pdf)
-  shopt -u nullglob
+  shopt -u nullglob nocaseglob
   [[ ${#pdfs_here[@]} -eq 0 ]] && continue
 
   # skip si tous les .md existent
   need=false
   for pdf in "${pdfs_here[@]}"; do
-    base=$(basename "$pdf" .pdf)
+    base=$(basename "$pdf"); base="${base%.[Pp][Dd][Ff]}"
     [[ -f "$hostdir/$base.md" ]] || { need=true; break; }
   done
   if ! $need; then
@@ -165,7 +166,7 @@ for hostdir in "${DIRS[@]}"; do
 
   # distribute .md + images a cote du PDF source
   for pdf in "${pdfs_here[@]}"; do
-    base=$(basename "$pdf" .pdf)
+    base=$(basename "$pdf"); base="${base%.[Pp][Dd][Ff]}"
     md=$(find "$host_outdir/$base" -type f -name "$base.md" -print -quit 2>/dev/null)
     if [[ -z "$md" ]]; then
       fail=$((fail+1))

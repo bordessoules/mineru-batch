@@ -74,7 +74,8 @@ docker run --rm --gpus all nvidia/cuda:12.9.1-base-ubuntu22.04 nvidia-smi
 Le tout premier appel build l'image (~20-30 min, télécharge ~10 GB de modèles HF) puis démarre le serveur (warmup vLLM ~2-3 min). Les fois d'après, l'image est cache et seul le warmup serveur joue.
 
 ```bash
-chmod +x mineru-batch.sh
+git clone https://github.com/bordessoules/mineru-batch.git
+cd mineru-batch
 ./mineru-batch.sh ~/mes-factures
 ```
 

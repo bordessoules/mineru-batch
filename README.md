@@ -97,12 +97,32 @@ Sortie typique :
 ./mineru-batch.sh <dossier>                            # GPU 0, backend hybrid (defaut)
 ./mineru-batch.sh <dossier> --gpu 1                    # cible la 2eme GPU
 ./mineru-batch.sh <dossier> --backend vlm-http-client  # VLM pur (plus lent, qualite max)
+./mineru-batch.sh <dossier> --md-suffix _v2            # genere foo_v2.md (compare cote-a-cote)
 ```
 
 | Backend | Vitesse | Qualité | Quand l'utiliser |
 |---|---|---|---|
 | `hybrid-http-client` (défaut) | ~5 s/PDF | 95+ OmniDocBench | PDFs avec texte natif (factures, rapports) |
 | `vlm-http-client` | ~15 s/PDF | 95+ OmniDocBench | PDFs scannés ou layouts très atypiques |
+
+### Comparer plusieurs runs côte-à-côte avec `--md-suffix`
+
+Par défaut le wrapper écrit `foo.md` à côté de `foo.pdf` et **skip** au prochain run si `foo.md` existe déjà.
+
+`--md-suffix _NAME` change cette logique : le `.md` est nommé `foo_NAME.md`, et le skip teste cette même variante. Pratique pour évaluer plusieurs configs sur le même corpus sans détruire les outputs précédents :
+
+```bash
+# baseline avec hybrid
+./mineru-batch.sh ~/factures
+
+# comparer avec vlm pur sur les mêmes fichiers
+./mineru-batch.sh ~/factures --backend vlm-http-client --md-suffix _vlm
+
+# comparer avec un serveur MinerU distant
+./mineru-batch.sh ~/factures --remote http://srv/v1 --md-suffix _remote
+```
+
+Tu te retrouves avec `foo.md`, `foo_vlm.md`, `foo_remote.md` côte à côte. `diff` ou un éditeur side-by-side permet de juger.
 
 ## Brancher un serveur MinerU distant via `--remote`
 

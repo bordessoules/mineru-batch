@@ -104,57 +104,38 @@ Sortie typique :
 | `hybrid-http-client` (défaut) | ~5 s/PDF | 95+ OmniDocBench | PDFs avec texte natif (factures, rapports) |
 | `vlm-http-client` | ~15 s/PDF | 95+ OmniDocBench | PDFs scannés ou layouts très atypiques |
 
-## Brancher un autre serveur OpenAI-compatible (LM Studio, OpenRouter, vLLM custom…)
+## Brancher un serveur MinerU distant via `--remote`
 
-Le mode `--remote URL` saute le serveur vLLM intégré et envoie les pages directement à un endpoint **OpenAI-compatible externe**. MinerU utilise simplement `/v1/chat/completions` avec `image_url` base64 — donc n'importe quel serveur respectant ce contrat marche, **avec un VLM moderne au choix** (Qwen3-VL, GLM-4.5V, InternVL3, GPT-4o, Claude, Gemini, etc.).
+Le mode `--remote URL` saute le serveur vLLM intégré et envoie les pages directement à un endpoint OpenAI-compatible externe.
 
-> **Trade-off** : le modèle par défaut `MinerU2.5-Pro-2604-1.2B` est fine-tuné spécifiquement pour la conversion de documents. Un VLM générique (même plus gros) peut être moins précis sur les tableaux complexes et les formules. Mais sur du texte courant et des layouts standards (factures, rapports), un Qwen3-VL ou GPT-4o donne des résultats au moins équivalents.
-
-### LM Studio (local, GPU/CPU host)
-
-1. Lance LM Studio, charge un VLM (ex. `Qwen2.5-VL-7B-Instruct` ou `MiniCPM-V-2.6`)
-2. Démarre le serveur OpenAI-compat (port 1234 par défaut)
-3. Lance le batch :
+> ⚠️ **Le modèle distant doit être MinerU2.5-Pro (ou un fine-tune compatible).**
+>
+> Tentation naturelle : pointer `--remote` vers LM Studio / Ollama / OpenRouter avec un VLM générique (Gemma, Qwen3-VL, GPT-4o…) pour avoir un modèle plus moderne. **Ça ne marche pas.** MinerU n'envoie pas un prompt OCR libre — il fait du *Layout Detection* en deux étapes et attend une réponse au format spécifique :
+> ```
+> <|box_start|>x1 y1 x2 y2<|box_end|><|ref_start|>text<|ref_end|>contenu
+> ```
+> Un VLM générique répond en prose descriptive ("Header Area: Title 'Invoice'…") et MinerU ne peut rien en extraire → le `.md` final est vide. Si tu vois des `[FAIL] xxx.pdf : .md vide`, c'est ça.
+>
+> Le wrapper détecte ce cas et FAIL au lieu de claim un faux OK.
+>
+> **Cas d'usage légitime du `--remote`** :
 
 ```bash
+# Tu as un serveur MinerU sur une autre machine du LAN (avec le GPU)
+./mineru-batch.sh ~/factures --remote http://serveur.lan:30000/v1
+
+# Tu as un serveur MinerU derrière une auth Bearer
 ./mineru-batch.sh ~/factures \
-  --remote http://host.docker.internal:1234/v1
+  --remote https://mon-mineru.example.com/v1 \
+  --api-key sk-...
+
+# Plusieurs hôtes batch mutualisent le même serveur MinerU
+HOST_A: docker compose --profile openai-server up -d
+HOST_B: ./mineru-batch.sh ~/pdfs --remote http://HOST_A:30000/v1
+HOST_C: ./mineru-batch.sh ~/pdfs --remote http://HOST_A:30000/v1
 ```
 
-(`host.docker.internal` est résolu automatiquement vers l'host depuis le container — fonctionne sur Docker Desktop et sur Linux via `--add-host=host-gateway` qu'on injecte.)
-
-### Ollama (local)
-
-```bash
-ollama serve  # déjà fait par défaut
-ollama pull qwen2.5-vl:7b
-./mineru-batch.sh ~/factures --remote http://host.docker.internal:11434/v1
-```
-
-### OpenRouter (cloud, pas de GPU local)
-
-```bash
-./mineru-batch.sh ~/factures \
-  --remote https://openrouter.ai/api/v1 \
-  --model qwen/qwen3-vl-8b-instruct \
-  --api-key sk-or-v1-xxxxx
-```
-
-Modèles VLM utiles sur OpenRouter : `qwen/qwen3-vl-*`, `anthropic/claude-sonnet-4.5`, `openai/gpt-4o`, `google/gemini-1.5-pro`, `meta-llama/llama-3.2-90b-vision-instruct`, `mistralai/pixtral-large-2411`.
-
-### vLLM custom (autre VLM dans vLLM)
-
-Pour servir un modèle plus gros que MinerU2.5-Pro-1.2B sur ta machine :
-
-```bash
-docker run -d --gpus all -p 8001:8000 \
-  --ipc=host --name my-vllm \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-VL-7B-Instruct \
-  --max-model-len 8192
-
-./mineru-batch.sh ~/factures --remote http://host.docker.internal:8001/v1
-```
+`host.docker.internal` est résolu automatiquement vers l'host depuis le container — fonctionne sur Docker Desktop et sur Linux via `--add-host=host-gateway` injecté par le wrapper.
 
 ### Variables d'env supportées (équivalent flags)
 

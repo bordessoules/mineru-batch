@@ -167,12 +167,16 @@ for hostdir in "${DIRS[@]}"; do
   for pdf in "${pdfs_here[@]}"; do
     base=$(basename "$pdf" .pdf)
     md=$(find "$host_outdir/$base" -type f -name "$base.md" -print -quit 2>/dev/null)
-    if [[ -n "$md" ]]; then
+    if [[ -z "$md" ]]; then
+      fail=$((fail+1))
+      echo "    [FAIL] $base.pdf : pas de .md genere (voir $LOG)"
+    elif [[ ! -s "$md" ]]; then
+      # .md existe mais 0 byte : signe que le VLM ne sait pas produire le format MinerU
+      fail=$((fail+1))
+      echo "    [FAIL] $base.pdf : .md vide (modele non-MinerU au bout du --remote ?)"
+    else
       cp "$md" "$hostdir/$base.md"
       ok=$((ok+1))
-    else
-      fail=$((fail+1))
-      echo "    [FAIL] $base.pdf (voir $LOG)"
     fi
     img_src=$(find "$host_outdir/$base" -type d -name "images" -print -quit 2>/dev/null)
     if [[ -n "$img_src" ]]; then

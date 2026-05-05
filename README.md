@@ -104,6 +104,49 @@ Sortie typique :
 | `hybrid-http-client` (défaut) | ~5 s/PDF | 95+ OmniDocBench | PDFs avec texte natif (factures, rapports) |
 | `vlm-http-client` | ~15 s/PDF | 95+ OmniDocBench | PDFs scannés ou layouts très atypiques |
 
+## Brancher un serveur MinerU distant via `--remote`
+
+Le mode `--remote URL` saute le serveur vLLM intégré et envoie les pages directement à un endpoint OpenAI-compatible externe.
+
+> ⚠️ **Le modèle distant doit être MinerU2.5-Pro (ou un fine-tune compatible).**
+>
+> Tentation naturelle : pointer `--remote` vers LM Studio / Ollama / OpenRouter avec un VLM générique (Gemma, Qwen3-VL, GPT-4o…) pour avoir un modèle plus moderne. **Ça ne marche pas.** MinerU n'envoie pas un prompt OCR libre — il fait du *Layout Detection* en deux étapes et attend une réponse au format spécifique :
+> ```
+> <|box_start|>x1 y1 x2 y2<|box_end|><|ref_start|>text<|ref_end|>contenu
+> ```
+> Un VLM générique répond en prose descriptive ("Header Area: Title 'Invoice'…") et MinerU ne peut rien en extraire → le `.md` final est vide. Si tu vois des `[FAIL] xxx.pdf : .md vide`, c'est ça.
+>
+> Le wrapper détecte ce cas et FAIL au lieu de claim un faux OK.
+>
+> **Cas d'usage légitime du `--remote`** :
+
+```bash
+# Tu as un serveur MinerU sur une autre machine du LAN (avec le GPU)
+./mineru-batch.sh ~/factures --remote http://serveur.lan:30000/v1
+
+# Tu as un serveur MinerU derrière une auth Bearer
+./mineru-batch.sh ~/factures \
+  --remote https://mon-mineru.example.com/v1 \
+  --api-key sk-...
+
+# Plusieurs hôtes batch mutualisent le même serveur MinerU
+HOST_A: docker compose --profile openai-server up -d
+HOST_B: ./mineru-batch.sh ~/pdfs --remote http://HOST_A:30000/v1
+HOST_C: ./mineru-batch.sh ~/pdfs --remote http://HOST_A:30000/v1
+```
+
+`host.docker.internal` est résolu automatiquement vers l'host depuis le container — fonctionne sur Docker Desktop et sur Linux via `--add-host=host-gateway` injecté par le wrapper.
+
+### Variables d'env supportées (équivalent flags)
+
+| Flag | Env var | Effet |
+|---|---|---|
+| `--remote URL` | — | Mode endpoint externe |
+| `--model NAME` | `MINERU_VL_MODEL_NAME` | Force le model name dans la requête |
+| `--api-key KEY` | `MINERU_VL_API_KEY` | Header `Authorization: Bearer <key>` |
+| `--gpu N` | `GPU_ID` | GPU pour le serveur local (mode défaut) |
+| `--backend B` | `BACKEND` | `hybrid-http-client` (défaut) ou `vlm-http-client` |
+
 ## Reprise / ajout incrémental
 
 Ajoute des PDFs n'importe où dans l'arbo, relance la même commande : seuls les nouveaux sont traités.

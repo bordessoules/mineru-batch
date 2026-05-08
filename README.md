@@ -24,9 +24,9 @@ Une facture Bouygues Telecom (3 pages) → `Bouyguestelecom_Facture_20250716.md`
 ```markdown
 Date de facture 16/07/2025
 
-N° de facture 11014954620725
+N° de facture 1x014xx46x07xx
 
-N° de ligne 06 66 56 55 07
+N° de ligne 06 xx xx xx xx
 
 Bonjour, voici votre facture du 16 juillet 2025
 
